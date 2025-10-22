@@ -1,6 +1,6 @@
+// frontend/src/App.tsx
 import { useState } from "react";
-import { apiUpload, apiIndex, apiSearchVec, apiAskVec } from "../lib/api";
-import { embedBatch, embedOne } from "../lib/embeddings";
+import { apiAsk, apiSearch, apiUpload } from "../lib/api";
 
 type Hit = { doc_id: number; idx: number; text: string; score: number };
 
@@ -17,28 +17,23 @@ export default function App() {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
 
+  const [docCount, setDocCount] = useState(0);
+
   const [askQ, setAskQ] = useState("");
   const [answer, setAnswer] = useState<string>("");
   const [sources, setSources] = useState<Hit[]>([]);
 
   const [searchQ, setSearchQ] = useState("");
   const [searchHits, setSearchHits] = useState<Hit[]>([]);
-  const [docCount, setDocCount] = useState(0);
 
   async function handleUpload() {
     if (!file) return;
     try {
       setUploading(true);
-      // 1) Get chunks from server (no embeddings)
-      const { ok, filename, chunks } = await apiUpload(file);
-      if (!ok) throw new Error("Upload did not return ok");
-      // 2) Embed chunks in-browser
-      const vectors = await embedBatch(chunks);
-      // 3) Send vectors back to server for storage
-      await apiIndex({ filename, chunks, vectors });
-      setDocCount((n) => n + 1);
+      const res = await apiUpload(file); // {status, chunks}
+      if (res?.status === "ok") setDocCount((n) => n + 1);
     } catch (e: any) {
-      alert(`Upload/index failed: ${e.message ?? e}`);
+      alert(`Upload/Index failed: ${e.message ?? e}`);
     } finally {
       setUploading(false);
     }
@@ -48,19 +43,25 @@ export default function App() {
     if (!askQ.trim()) return;
     setAnswer("");
     setSources([]);
-    // embed query locally
-    const qvec = await embedOne(askQ.trim());
-    const { ok, answer, sources } = await apiAskVec(askQ.trim(), qvec);
-    if (!ok) return;
-    setAnswer(answer);
-    setSources(sources || []);
+    try {
+      const { ok, answer, sources } = await apiAsk(askQ.trim());
+      if (ok) {
+        setAnswer(answer);
+        setSources(sources || []);
+      }
+    } catch (e: any) {
+      alert(`Ask failed: ${e.message ?? e}`);
+    }
   }
 
   async function handleSearch() {
     if (!searchQ.trim()) return;
-    const qvec = await embedOne(searchQ.trim());
-    const { ok, hits } = await apiSearchVec(qvec, 5);
-    if (ok) setSearchHits(hits || []);
+    try {
+      const { ok, hits } = await apiSearch(searchQ.trim());
+      if (ok) setSearchHits(hits || []);
+    } catch (e: any) {
+      alert(`Search failed: ${e.message ?? e}`);
+    }
   }
 
   return (
@@ -96,7 +97,7 @@ export default function App() {
               disabled={!file || uploading}
               className="shrink-0 rounded-lg bg-violet-600 hover:bg-violet-500 px-4 py-2 text-sm font-medium disabled:opacity-50"
             >
-              {uploading ? "Uploading…" : "Upload & Index"}
+              {uploading ? "Uploading..." : "Upload & Index"}
             </button>
           </div>
         </div>
@@ -111,10 +112,7 @@ export default function App() {
                 value={askQ}
                 onChange={(e) => setAskQ(e.target.value)}
               />
-              <button
-                onClick={handleAsk}
-                className="rounded-lg bg-violet-600 hover:bg-violet-500 px-4 py-2 text-sm font-medium"
-              >
+              <button onClick={handleAsk} className="rounded-lg bg-violet-600 hover:bg-violet-500 px-4 py-2 text-sm font-medium">
                 Ask
               </button>
             </div>
@@ -152,10 +150,7 @@ export default function App() {
                 value={searchQ}
                 onChange={(e) => setSearchQ(e.target.value)}
               />
-              <button
-                onClick={handleSearch}
-                className="rounded-lg bg-violet-600 hover:bg-violet-500 px-4 py-2 text-sm font-medium"
-              >
+              <button onClick={handleSearch} className="rounded-lg bg-violet-600 hover:bg-violet-500 px-4 py-2 text-sm font-medium">
                 Search
               </button>
             </div>
