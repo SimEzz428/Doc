@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { apiUpload, apiIndex, apiSearchVec, apiAskVec } from "../lib/api";
 import { embedBatch, embedOne } from "../lib/embeddings";
 
