@@ -1,4 +1,5 @@
-const BASE = import.meta.env.VITE_API_URL!;  // you set this in Render
+// frontend/lib/api.ts
+const BASE = import.meta.env.VITE_API_URL!; // e.g. https://doc-analyzer-bz2g.onrender.com
 
 export async function apiUpload(file: File) {
   const fd = new FormData();
@@ -14,6 +15,7 @@ export async function apiSearch(q: string) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ q }),
   });
+  if (!r.ok) throw new Error(`search failed: ${r.status}`);
   return r.json(); // {ok, hits}
 }
 
@@ -23,5 +25,6 @@ export async function apiAsk(q: string) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ q }),
   });
+  if (!r.ok) throw new Error(`ask failed: ${r.status}`);
   return r.json(); // {ok, answer, sources}
 }
