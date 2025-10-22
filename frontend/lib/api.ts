@@ -1,40 +1,27 @@
-// frontend/src/lib/api.ts
-const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:8090";
+const BASE = import.meta.env.VITE_API_URL!;  // you set this in Render
 
-export async function apiUpload(file: File): Promise<{ ok: boolean; filename: string; chunks: string[] }> {
+export async function apiUpload(file: File) {
   const fd = new FormData();
   fd.append("file", file);
-  const r = await fetch(`${API}/upload`, { method: "POST", body: fd });
+  const r = await fetch(`${BASE}/upload`, { method: "POST", body: fd });
   if (!r.ok) throw new Error(`upload failed: ${r.status}`);
-  return r.json();
+  return r.json(); // {status, chunks}
 }
 
-export async function apiIndex(payload: { filename: string; chunks: string[]; vectors: number[][] }) {
-  const r = await fetch(`${API}/index`, {
+export async function apiSearch(q: string) {
+  const r = await fetch(`${BASE}/search`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ q }),
   });
-  if (!r.ok) throw new Error(`index failed: ${r.status}`);
-  return r.json();
+  return r.json(); // {ok, hits}
 }
 
-export async function apiSearchVec(qvec: number[], top_k = 5) {
-  const r = await fetch(`${API}/search_vec`, {
+export async function apiAsk(q: string) {
+  const r = await fetch(`${BASE}/ask`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ qvec, top_k }),
+    body: JSON.stringify({ q }),
   });
-  if (!r.ok) throw new Error(`search_vec failed: ${r.status}`);
-  return r.json();
-}
-
-export async function apiAskVec(q: string, qvec: number[]) {
-  const r = await fetch(`${API}/ask`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ q, qvec }),
-  });
-  if (!r.ok) throw new Error(`ask failed: ${r.status}`);
-  return r.json();
+  return r.json(); // {ok, answer, sources}
 }
