@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { apiAsk, apiSearch, apiUpload } from "../lib/api";
+import { apiUpload, apiIndex, apiSearchVec, apiAskVec } from "../lib/api";
+import { embedBatch, embedOne } from "../lib/embeddings";
 
 type Hit = { doc_id: number; idx: number; text: string; score: number };
 
@@ -19,24 +20,25 @@ export default function App() {
   const [askQ, setAskQ] = useState("");
   const [answer, setAnswer] = useState<string>("");
   const [sources, setSources] = useState<Hit[]>([]);
+
   const [searchQ, setSearchQ] = useState("");
   const [searchHits, setSearchHits] = useState<Hit[]>([]);
-
   const [docCount, setDocCount] = useState(0);
-  const [risks, setRisks] = useState(0);
-  const [actions, setActions] = useState(0);
 
   async function handleUpload() {
     if (!file) return;
     try {
       setUploading(true);
-      const res = await apiUpload(file); // {status, chunks}
+      // 1) Get chunks from server (no embeddings)
+      const { ok, filename, chunks } = await apiUpload(file);
+      if (!ok) throw new Error("Upload did not return ok");
+      // 2) Embed chunks in-browser
+      const vectors = await embedBatch(chunks);
+      // 3) Send vectors back to server for storage
+      await apiIndex({ filename, chunks, vectors });
       setDocCount((n) => n + 1);
-      // demo placeholders
-      setRisks((r) => r); 
-      setActions((a) => a + res.chunks);
     } catch (e: any) {
-      alert(`Upload failed: ${e.message ?? e}`);
+      alert(`Upload/index failed: ${e.message ?? e}`);
     } finally {
       setUploading(false);
     }
@@ -46,43 +48,39 @@ export default function App() {
     if (!askQ.trim()) return;
     setAnswer("");
     setSources([]);
-    const { ok, answer, sources } = await apiAsk(askQ.trim());
+    // embed query locally
+    const qvec = await embedOne(askQ.trim());
+    const { ok, answer, sources } = await apiAskVec(askQ.trim(), qvec);
     if (!ok) return;
     setAnswer(answer);
-    setSources(sources);
+    setSources(sources || []);
   }
 
   async function handleSearch() {
     if (!searchQ.trim()) return;
-    const { ok, hits } = await apiSearch(searchQ.trim());
-    if (ok) setSearchHits(hits);
+    const qvec = await embedOne(searchQ.trim());
+    const { ok, hits } = await apiSearchVec(qvec, 5);
+    if (ok) setSearchHits(hits || []);
   }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <div className="max-w-6xl mx-auto px-6 py-10">
-        {/* Header */}
         <div className="mb-8">
           <h1 className="text-2xl font-semibold tracking-tight">Document Library</h1>
-          <p className="text-slate-400 text-sm">
-            Your intelligent document analysis worktool.
-          </p>
+          <p className="text-slate-400 text-sm">Your intelligent document analysis worktool.</p>
         </div>
 
-        {/* Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
           <StatCard label="Documents Analyzed" value={docCount} />
         </div>
 
-        {/* Upload */}
         <div className="rounded-xl bg-slate-900/60 border border-slate-800 p-6 mb-8">
           <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
             <div className="w-full">
-              <div className="text-sm text-slate-300 font-medium mb-2">
-                Upload Document
-              </div>
+              <div className="text-sm text-slate-300 font-medium mb-2">Upload Document</div>
               <p className="text-slate-400 text-sm mb-3">
-                Upload PDF, DOCX, or TXT. Parsed locally; embeddings via Ollama (dev) or TF-IDF (cloud).
+                Upload PDF, DOCX, or TXT. Parsing on server; embeddings in your browser (free).
               </p>
               <input
                 type="file"
@@ -98,14 +96,12 @@ export default function App() {
               disabled={!file || uploading}
               className="shrink-0 rounded-lg bg-violet-600 hover:bg-violet-500 px-4 py-2 text-sm font-medium disabled:opacity-50"
             >
-              {uploading ? "Uploading..." : "Upload & Index"}
+              {uploading ? "Uploading…" : "Upload & Index"}
             </button>
           </div>
         </div>
 
-        {/* Two columns */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Ask */}
           <div className="rounded-xl bg-slate-900/60 border border-slate-800 p-6">
             <div className="text-sm text-slate-300 font-medium mb-3">Ask questions</div>
             <div className="flex gap-2 mb-4">
@@ -135,13 +131,8 @@ export default function App() {
               <div className="space-y-2">
                 {sources?.length ? (
                   sources.map((h, i) => (
-                    <div
-                      key={i}
-                      className="rounded-lg border border-slate-800 bg-slate-800/50 p-3 text-sm"
-                    >
-                      <div className="text-[11px] text-slate-400 mb-1">
-                        score {h.score.toFixed(3)}
-                      </div>
+                    <div key={i} className="rounded-lg border border-slate-800 bg-slate-800/50 p-3 text-sm">
+                      <div className="text-[11px] text-slate-400 mb-1">score {h.score.toFixed(3)}</div>
                       <div className="text-slate-200">{h.text}</div>
                     </div>
                   ))
@@ -152,7 +143,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Semantic search */}
           <div className="rounded-xl bg-slate-900/60 border border-slate-800 p-6">
             <div className="text-sm text-slate-300 font-medium mb-3">Semantic search</div>
             <div className="flex gap-2 mb-4">
@@ -173,13 +163,8 @@ export default function App() {
             <div className="space-y-2">
               {searchHits?.length ? (
                 searchHits.map((h, i) => (
-                  <div
-                    key={i}
-                    className="rounded-lg border border-slate-800 bg-slate-800/50 p-3 text-sm"
-                  >
-                    <div className="text-[11px] text-slate-400 mb-1">
-                      score {h.score.toFixed(3)}
-                    </div>
+                  <div key={i} className="rounded-lg border border-slate-800 bg-slate-800/50 p-3 text-sm">
+                    <div className="text-[11px] text-slate-400 mb-1">score {h.score.toFixed(3)}</div>
                     <div className="text-slate-200">{h.text}</div>
                   </div>
                 ))
@@ -189,7 +174,7 @@ export default function App() {
             </div>
 
             <div className="mt-6 text-[11px] text-slate-500">
-              Local-first. Embeddings & LLM via Ollama (dev). Built with FastAPI + React + Tailwind.
+              Local-first embeddings in your browser. FastAPI + React + Tailwind.
             </div>
           </div>
         </div>
